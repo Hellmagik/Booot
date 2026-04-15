@@ -17,9 +17,8 @@ router = Router()
 
 def action_keyboard() -> InlineKeyboardBuilder:
     keyboard = InlineKeyboardBuilder()
-    keyboard.button(text="🔄 Обновить", callback_data="action:refresh")
-    keyboard.button(text="🧹 Очистить", callback_data="action:cleanup")
-    keyboard.adjust(2)
+    keyboard.button(text="Связь с администратором", callback_data="action:admin_contact")
+    keyboard.adjust(1)
     return keyboard
 
 
@@ -48,16 +47,9 @@ async def handle_text(message: Message, bot: Bot) -> None:
     )
 
 
-@router.callback_query(F.data == "action:refresh")
-async def refresh_action(callback: CallbackQuery, bot: Bot) -> None:
-    await callback.answer("Обновлено")
-    if callback.message is not None:
-        await safe_delete_message(bot, callback.message.chat.id, callback.message.message_id)
-
-
-@router.callback_query(F.data == "action:cleanup")
-async def cleanup_action(callback: CallbackQuery, bot: Bot) -> None:
-    await callback.answer("Очищено")
+@router.callback_query(F.data == "action:admin_contact")
+async def admin_contact_action(callback: CallbackQuery, bot: Bot) -> None:
+    await callback.answer("Администратор скоро свяжется с вами")
     if callback.message is not None:
         await safe_delete_message(bot, callback.message.chat.id, callback.message.message_id)
 

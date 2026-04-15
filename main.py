@@ -17,6 +17,9 @@ from config import get_settings
 
 router = Router()
 drafts: dict[int, dict[str, Any]] = {}
+admin_chat_id: int | None = None
+admin_requests: dict[str, dict[str, Any]] = {}
+admin_reply_mode: dict[int, str] = {}
 
 
 def action_keyboard() -> InlineKeyboardBuilder:
@@ -35,20 +38,34 @@ def request_keyboard() -> InlineKeyboardBuilder:
     return keyboard
 
 
+def admin_ticket_keyboard(ticket_id: str) -> InlineKeyboardBuilder:
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="Ответить", callback_data=f"admin:reply:{ticket_id}")
+    keyboard.adjust(1)
+    return keyboard
+
+
 def create_ticket_id(length: int = 5) -> str:
     alphabet = string.ascii_uppercase + string.digits
     return "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
 
 
 def request_panel_text(ticket_id: str, question_text: str | None) -> str:
-    question = question_text if question_text else "— пока не заполнен"
+    status = "✅ Заполнен" if question_text else "⏳ Ожидание"
+    question_display = f"<i>{question_text}</i>" if question_text else "<i>— пока не указан</i>"
     return (
-        "<b>Связь с администратором</b>\n"
-        f"Номер заявки: <code>{ticket_id}</code>\n\n"
-        "1. Нажмите «Изменить».\n"
-        "2. Отправьте ваш вопрос следующим сообщением.\n"
-        "3. Нажмите «Отправить».\n\n"
-        f"<b>Текущий вопрос:</b> {question}"
+        "<b>📞 Связь с администратором</b>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🎟 <b>Номер заявки:</b> <code>{ticket_id}</code>\n"
+        f"📋 <b>Статус:</b> {status}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "<b>Инструкция:</b>\n"
+        "1️⃣  Нажмите кнопку <b>«Изменить»</b>\n"
+        "2️⃣  Отправьте ваш <b>вопрос</b>\n"
+        "3️⃣  Нажмите <b>«Отправить»</b>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"<b>💬 Ваш вопрос:</b>\n{question_display}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
 
@@ -102,9 +119,74 @@ async def start(message: Message, bot: Bot) -> None:
 @router.message(F.text)
 async def handle_text(message: Message, bot: Bot) -> None:
     user_id = message.from_user.id
-    draft = drafts.get(user_id)
+    admin_id = user_id
 
     await safe_delete_message(bot, message.chat.id, message.message_id)
+
+    # Check if admin is in reply mode
+    if admin_id in admin_reply_mode:
+        ticket_id = admin_reply_mode.pop(admin_id)
+        request_info = admin_requests.get(ticket_id)
+
+        if request_info is None:
+            await bot.send_message(message.chat.id, "Заявка не найдена")
+            return
+
+        user_to_reply = request_info["user_id"]
+
+        try:
+            await bot.send_message(
+                user_to_reply,
+                (
+                    "<b>✅ Ответ администратора</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"🎟 <b>По заявке:</b> <code>{ticket_id}</code>\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"{message.text}\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                ),
+            )
+            
+            if admin_chat_id is not None and request_info.get("admin_message_id"):
+                try:
+                    await bot.edit_message_text(
+                        chat_id=admin_chat_id,
+                        message_id=request_info["admin_message_id"],
+                        text=(
+                            "<b>📬 Новая заявка</b>\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            f"🎟 <b>Номер:</b> <code>{ticket_id}</code>\n"
+                            f"👤 <b>Пользователь:</b> {request_info['user_name']}\n"
+                            f"🔗 <b>Username:</b> {request_info['username']}\n"
+                            f"🆔 <b>User ID:</b> <code>{user_to_reply}</code>\n\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            f"💬 <b>Вопрос:</b>\n<i>{request_info['question_text']}</i>\n\n"
+                            "✅ <b>Статус:</b> Ответ отправлен"
+                        ),
+                        reply_markup=None,
+                    )
+                except TelegramBadRequest:
+                    pass
+            
+            await bot.send_message(
+                message.chat.id,
+                "<b>✅ Ответ успешно отправлен пользователю</b>\n\n"
+                f"🎟 Заявка: <code>{ticket_id}</code>\n"
+                f"📤 Отправлено пользователю: {request_info['user_name']}"
+            )
+            admin_requests.pop(ticket_id, None)
+        except TelegramBadRequest as error:
+            if "Forbidden" in str(error):
+                await bot.send_message(message.chat.id, 
+                    "❌ Не удалось отправить ответ\n\n"
+                    "Пользователь заблокировал бота или удалил чат."
+                )
+            else:
+                raise
+        return
+
+    # Regular user mode: filling out request
+    draft = drafts.get(user_id)
 
     if draft is None:
         await show_main_menu(message.chat.id, bot)
@@ -154,6 +236,35 @@ async def request_send_action(callback: CallbackQuery, bot: Bot) -> None:
         await callback.answer("Сначала напишите вопрос через «Изменить»", show_alert=True)
         return
 
+    if admin_chat_id is not None:
+        user = callback.from_user
+        user_name = user.full_name
+        username = f"@{user.username}" if user.username else "—"
+        
+        admin_msg = await bot.send_message(
+            admin_chat_id,
+            (
+                "<b>📬 Новая заявка</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"🎟 <b>Номер:</b> <code>{draft['ticket_id']}</code>\n"
+                f"👤 <b>Пользователь:</b> {user_name}\n"
+                f"🔗 <b>Username:</b> {username}\n"
+                f"🆔 <b>User ID:</b> <code>{user.id}</code>\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"💬 <b>Вопрос:</b>\n<i>{draft['question_text']}</i>\n\n"
+                "⏳ <b>Статус:</b> Ожидает ответа"
+            ),
+            reply_markup=admin_ticket_keyboard(draft["ticket_id"]).as_markup(),
+        )
+        admin_requests[draft["ticket_id"]] = {
+            "user_id": user.id,
+            "ticket_id": draft["ticket_id"],
+            "question_text": draft["question_text"],
+            "user_name": user_name,
+            "username": username,
+            "admin_message_id": admin_msg.message_id,
+        }
+
     await callback.answer(f"Заявка {draft['ticket_id']} отправлена")
     if callback.message is not None:
         await safe_delete_message(bot, callback.message.chat.id, callback.message.message_id)
@@ -172,8 +283,26 @@ async def request_cancel_action(callback: CallbackQuery, bot: Bot) -> None:
         await show_main_menu(callback.message.chat.id, bot)
 
 
+@router.callback_query(F.data.startswith("admin:reply:"))
+async def admin_reply_action(callback: CallbackQuery, bot: Bot) -> None:
+    ticket_id = callback.data.split(":", 2)[-1]
+    admin_id = callback.from_user.id
+
+    if ticket_id not in admin_requests:
+        await callback.answer("Заявка не найдена", show_alert=True)
+        return
+
+    admin_reply_mode[admin_id] = ticket_id
+    await callback.answer("Напишите ответ для пользователя")
+
+
+
+
+
 async def main() -> None:
+    global admin_chat_id
     settings = get_settings()
+    admin_chat_id = settings.admin_id
 
     bot = Bot(
         token=settings.bot_token,

@@ -5,22 +5,38 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from bot.config import get_settings
+from config import get_settings
+from handlers import router
+
+
+logger = logging.getLogger(__name__)
+
+
+def setup_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
 
 
 async def main() -> None:
+    logger.info("Запуск бота")
     settings = get_settings()
 
-    bot = Bot(
+    async with Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
-    dp = Dispatcher()
+    ) as bot:
+        dp = Dispatcher()
+        dp.include_router(router)
 
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    asyncio.run(main())
+    setup_logging()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен пользователем")

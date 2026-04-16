@@ -8,8 +8,27 @@
 - Модульная структура (`handlers`, `services`)
 - Команды `/start`, `/help`
 - Обработка обычного текста через GigaChat
+- Связь с администратором через заявки (тикеты)
 
 ## 1) Установка
+
+### Создание и активация виртуального окружения
+
+Windows (PowerShell):
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Linux/macOS:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+После активации установи зависимости:
 
 ```bash
 pip install -r requirements.txt
@@ -24,7 +43,10 @@ BOT_TOKEN=токен_твоего_бота
 GIGACHAT_CREDENTIALS=ключ_авторизации_gigachat
 GIGACHAT_MODEL=GigaChat
 GIGACHAT_VERIFY_SSL_CERTS=false
+ADMIN_CHAT_ID=telegram_user_id_администратора
 ```
+
+> `ADMIN_CHAT_ID` нужен для режима заявок админу. Если не указывать, AI-режим будет работать, а отправка заявок — нет.
 
 ## 3) Запуск
 
